@@ -1,0 +1,298 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  # VPC
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: MyVPC
+
+  # Subnets
+  MySubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+
+  MySubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+
+  # Internet Gateway
+  MyInternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  MyVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref MyInternetGateway
+
+  # Route Table and Routes
+  MyRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  MyRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref MyRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyInternetGateway
+
+  MySubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MySubnet1
+      RouteTableId: !Ref MyRouteTable
+
+  MySubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MySubnet2
+      RouteTableId: !Ref MyRouteTable
+
+  # Security Group for ALB and ECS
+  MySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and HTTPS inbound traffic
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  # ALB
+  MyLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: my-load-balancer
+      Subnets:
+        - !Ref MySubnet1
+        - !Ref MySubnet2
+      SecurityGroups:
+        - !Ref MySecurityGroup
+      Scheme: internet-facing
+
+  # ALB Listener
+  MyHTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MyTargetGroup
+      LoadBalancerArn: !Ref MyLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # Target Group
+  MyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref MyVPC
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+
+  MyEcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:MyECSService1
+    Type: AWS::ECS::Service
+    DependsOn: MyLoadBalancer
+    Properties:
+      Cluster: !Ref MyECSCluster
+      TaskDefinition: !Ref MyServiceConnectNamespace
+      DesiredCount: 1
+      LoadBalancers:
+        - TargetGroupArn: !Ref MyTargetGroup
+          ContainerPort: 80
+          ContainerName: 'my-container-1'
+      ServiceConnectConfiguration:
+        Enabled: true
+        Services:
+          - PortName: http
+            DiscoveryName: nginx-ui
+            ClientAliases:
+              - Port: 80
+                DnsName: service1
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: /ecs/service-connect
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: ecs
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EcsTaskExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - logs:CreateLogStream
+                  - logs:CreateLogGroup
+                  - logs:PutLogEvents
+                Resource: "*"
+  MyECRAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECRAccessPolicy
+      Roles:
+        - !Ref MyEcsTaskExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+            Resource: "*"
+
+  # ECS Cluster
+  MyECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties: 
+      ServiceConnectDefaults: 
+        Namespace: !GetAtt CloudMapNamespace.Arn
+
+  # ECR Repositories
+  MyECRRepo1:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: my-ecr-repo-1
+
+  # ECS Task Definition for Service 1
+  MyTaskDefinition1:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: MyTaskDefinition1
+      ExecutionRoleArn: !GetAtt MyEcsTaskExecutionRole.Arn
+      Cpu: '256'
+      Memory: '512'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: my-container-1
+          Image: "269866701919.dkr.ecr.us-east-1.amazonaws.com/my-ecr-repo-1:latest" 
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+              Name: my-container-1-port  # 名前を定義
+
+  # ECS Service for Service 1 with Service Connect
+  MyECSService1:
+    Type: AWS::ECS::Service
+    DependsOn: MyLoadBalancer
+    Properties:
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [ !Ref 'MySubnet1' , !Ref 'MySubnet2' ]
+          SecurityGroups: [!Ref 'MySecurityGroup' ]
+      Cluster: !Ref MyECSCluster
+      TaskDefinition: !Ref MyTaskDefinition1
+      LaunchType: FARGATE
+      DesiredCount: 1
+      LoadBalancers:
+        - TargetGroupArn: !Ref MyTargetGroup
+          ContainerPort: 80
+          ContainerName: 'my-container-1'
+      ServiceConnectConfiguration:
+        Enabled: true
+        Namespace: !GetAtt CloudMapNamespace.Arn
+        Services:
+          - PortName: my-container-1-port
+            DiscoveryName: nginx-ui
+            ClientAliases:
+              - Port: 80
+                DnsName: service1
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: /ecs/service-connect
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: ecs
+
+  CloudMapNamespace:
+    Type: AWS::ServiceDiscovery::HttpNamespace
+    Properties: 
+      Description: Namespace for the sample application.
+      Name: !Sub 'service.local'
+
+    # Properties:
+    #   Cluster: !Ref AppCluster
+    #   DesiredCount: 1
+    #   TaskDefinition: !Ref 'AppUItaskDefinition'
+    #   NetworkConfiguration:
+    #     AwsvpcConfiguration:
+    #       AssignPublicIp: ENABLED
+    #       Subnets: [ !Ref 'PublicSubnet1' , !Ref 'PublicSubnet2' ]
+    #       SecurityGroups: [!Ref 'UISecurityGroup' ]
+    #   LoadBalancers:
+    #     - TargetGroupArn: !Ref MyTargetGroup
+    #       ContainerPort: 80
+    #       ContainerName: 'my-container-1'
+    #   ServiceConnectConfiguration:
+    #     Enabled: true 
+    #     Services: 
+    #       - PortName: app-ui
+    #         DiscoveryName: yelb-ui
+    #         ClientAliases:
+    #           - DnsName: yelb-ui
+    #             Port: 80
+    #     LogConfiguration:
+    #       LogDriver: awslogs
+    #       Options:
+    #         awslogs-create-group: true
+    #         awslogs-group: sample-ecs-app
+    #         awslogs-region: !Ref AWS::Region
+    #         awslogs-stream-prefix: "ui-serviceconnect"
+
+
+Outputs:
+  LoadBalancerDNSName:
+    Description: DNS Name of the load balancer
+    Value: !GetAtt MyLoadBalancer.DNSName
+
+  ECSCluster:
+    Description: ECS Cluster
+    Value: !Ref MyECSCluster

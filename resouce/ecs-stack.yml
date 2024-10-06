@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create an ECS service with Service Connect.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: The name of the ECS cluster.
+  ServiceName:
+    Type: String
+    Description: The name of the ECS service.
+  ContainerImage:
+    Type: String
+    Description: The container image for the ECS service.
+  DesiredCount:
+    Type: Number
+    Default: 1
+    Description: Number of desired ECS tasks.
+
+Resources:
+  # ECS Cluster
+  MyECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ClusterName
+
+  # Task Definition
+  MyTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref ServiceName
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Ref ServiceName
+          Image: !Ref ContainerImage
+          Memory: 512
+          Cpu: 256
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+
+  MyECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref MyECSCluster
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref MyTaskDefinition
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+          SecurityGroups:
+            - !Ref ALBSecurityGroup
+          AssignPublicIp: ENABLED
+      # Service Connect Configuration
+      ServiceConnectConfiguration:
+        Namespace: !Sub "${ServiceName}.local"  # Service Connectの名前空間
+        Services:
+          - Name: !Ref ServiceName
+            Discovery:
+              Endpoint: !Sub "${ServiceName}.${ServiceName}.local"
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Sub "/ecs/${ServiceName}/logs"
+                awslogs-region: !Ref "AWS::Region"
+                awslogs-stream-prefix: ecs

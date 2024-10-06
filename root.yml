@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Parent stack for ALB and ECS service with Service Connect.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: The name of the ECS cluster.
+  ServiceName:
+    Type: String
+    Description: The name of the ECS service.
+  ContainerImage:
+    Type: String
+    Description: The container image for the ECS service.
+  DesiredCount:
+    Type: Number
+    Default: 1
+    Description: Number of desired ECS tasks.
+  ALBName:
+    Type: String
+    Description: The name of the Application Load Balancer.
+
+Resources:
+  # Nested stack for ALB
+  ALBStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/YOUR_BUCKET_NAME/alb-stack.yaml"
+      Parameters:
+        ALBName: !Ref ALBName
+
+  # Nested stack for ECS
+  ECSStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/YOUR_BUCKET_NAME/ecs-stack.yaml"
+      Parameters:
+        ClusterName: !Ref ClusterName
+        ServiceName: !Ref ServiceName
+        ContainerImage: !Ref ContainerImage
+        DesiredCount: !Ref DesiredCount
+
+Outputs:
+  ALBURL:
+    Description: "Application Load Balancer URL"
+    Value: !GetAtt ALBStack.Outputs.ALBURL

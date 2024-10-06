@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CodePipeline for deploying ECS services
+
+Parameters:
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC where ECS services will be deployed
+  Subnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: The first subnet for the ECS services
+  Subnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: The second subnet for the ECS services
+  ClusterName:
+    Type: String
+    Default: MyECSCluster
+    Description: The name of the ECS cluster
+  ServiceNameV1:
+    Type: String
+    Default: my-service-v1
+    Description: The name of the first service
+  ServiceNameV2:
+    Type: String
+    Default: my-service-v2
+    Description: The name of the second service
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository URL (e.g., https://github.com/user/repo)
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: GitHub branch name to deploy from
+
+Resources:
+
+  # ECS Cluster
+  MyECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ClusterName
+
+  # IAM Role for CodePipeline
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  # IAM Role for CodeBuild
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecs:DescribeClusters
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                Resource: "*"
+
+  # CodeBuild Project
+  MyCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${ServiceNameV1}-build"
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepo
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                docker: 20
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+            build:
+              commands:
+                - echo Build started on `date`
+                - echo Building the Docker image...
+                - docker build -t $IMAGE_REPO_NAME .
+                - docker tag $IMAGE_REPO_NAME:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - echo Pushing the Docker image...
+                - docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest
+                - echo Updating the ECS service...
+                - |
+                  echo '{"containerDefinitions":[{"name":"!Ref ServiceNameV1","image":"'$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest'"}]}'
+                  > task-definition.json
+                - aws ecs register-task-definition --cli-input-json file://task-definition.json
+                - aws ecs update-service --cluster !Ref ClusterName --service !Ref ServiceNameV1 --force-new-deployment
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:5.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          IMAGE_REPO_NAME: !Ref ServiceNameV1
+          ACCOUNT_ID: !Sub "${AWS::AccountId}"
+          AWS_REGION: !Ref "AWS::Region"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+
+  # CodePipeline
+  MyCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Sub "${AWS::AccountId}-codepipeline-artifacts"
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: '1'
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                Owner: !Sub "${GitHubRepoOwner}"
+                Repo: !Sub "${GitHubRepoName}"
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Ref GitHubOAuthToken
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ProjectName: !Ref MyCodeBuildProject
+
+Outputs:
+  CodePipeline:
+    Description: The name of the CodePipeline
+    Value: !Ref MyCodePipeline
