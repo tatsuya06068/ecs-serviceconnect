@@ -287,10 +287,11 @@ Resources:
     #         awslogs-region: !Ref AWS::Region
     #         awslogs-stream-prefix: "ui-serviceconnect"
 
-MyPipeline:
-    Type: "AWS::CodePipeline::Pipeline"
+Resources:
+  MyPipeline:
+    Type: AWS::CodePipeline::Pipeline
     Properties:
-      RoleArn: "arn:aws:iam::account-id:role/service-role/MyCodePipelineRole"
+      RoleArn: "arn:aws:iam::123456789012:role/CodePipelineExecutionRole"
       Stages:
         - Name: Source
           Actions:
@@ -302,6 +303,9 @@ MyPipeline:
                 Provider: CodeCommit
               OutputArtifacts:
                 - Name: SourceArtifact
+              Configuration:
+                RepositoryName: "my-repo"
+                BranchName: "main"
         - Name: Build
           Actions:
             - Name: BuildAction
@@ -312,9 +316,10 @@ MyPipeline:
                 Provider: CodeBuild
               InputArtifacts:
                 - Name: SourceArtifact
-              EnvironmentVariables:
-                - Name: SERVICE_VERSION
-                  Value: !Ref ServiceVersion
+              OutputArtifacts:
+                - Name: BuildArtifact
+              Configuration:
+                ProjectName: "MyBuildProject"
         - Name: Deploy
           Actions:
             - Name: DeployAction
@@ -324,14 +329,15 @@ MyPipeline:
                 Version: 1
                 Provider: CloudFormation
               InputArtifacts:
-                - Name: SourceArtifact
+                - Name: BuildArtifact
               Configuration:
-                StackName: "MyServiceStack"
+                StackName: "ECSServiceStack"
+                TemplatePath: "BuildArtifact::ecs-service.yaml"
                 Capabilities:
-                  - CAPABILITY_NAMED_IAM
-                TemplatePath: "SourceArtifact::ecs-stack.yaml"
+                  - CAPABILITY_IAM
                 Parameters:
-                  ServiceVersion: !Ref ServiceVersion
+                  ServiceVersion: "$(LATEST_TAG)"
+
 
 Outputs:
   LoadBalancerDNSName:
