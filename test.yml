@@ -319,7 +319,7 @@ Resources:
               OutputArtifacts:
                 - Name: BuildArtifact
               Configuration:
-                ProjectName: "MyBuildProject"
+                ProjectName: !Ref MyBuildProject
         - Name: Deploy
           Actions:
             - Name: DeployAction
@@ -338,7 +338,21 @@ Resources:
                 Parameters:
                   ServiceVersion: "$(LATEST_TAG)"
 
-
+  MyBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: MyBuildProject
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "buildspec.yml"  # ここでbuildspec.ymlを指定
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:5.0
+        Type: LINUX_CONTAINER
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      
 Outputs:
   LoadBalancerDNSName:
     Description: DNS Name of the load balancer
