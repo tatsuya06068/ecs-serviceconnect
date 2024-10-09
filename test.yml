@@ -385,6 +385,21 @@ CodeBuildServiceRole:
                   - "ecr:BatchGetImage"
                 Resource: "*"
 
+MyBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MyS3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:role/CodePipelineExecutionRole"  # CodePipelineのロールを指定
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"  # 必要に応じてPutObjectも追加
+            Resource: !Sub "arn:aws:s3:::${MyS3Bucket}/*"  
+            
 CodePipelineExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
