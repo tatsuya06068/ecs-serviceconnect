@@ -1,0 +1,36 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="API Gateway-ECS Service Connect-WAF">
+    <mxGraphModel dx="1050" dy="745" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <!-- API Gateway -->
+        <mxCell id="2" value="API Gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76c7c0;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="150" y="60" width="120" height="60" as="geometry" />
+        </mxCell>
+        <!-- WAF -->
+        <mxCell id="3" value="AWS WAF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc00;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="150" y="180" width="120" height="60" as="geometry" />
+        </mxCell>
+        <!-- Service Connect -->
+        <mxCell id="4" value="Service Connect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4b942;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="150" y="300" width="120" height="60" as="geometry" />
+        </mxCell>
+        <!-- ECS Cluster -->
+        <mxCell id="5" value="ECS Cluster" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0073bb;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="150" y="420" width="120" height="60" as="geometry" />
+        </mxCell>
+        <!-- Connections -->
+        <mxCell id="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="3" target="4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="4" target="5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

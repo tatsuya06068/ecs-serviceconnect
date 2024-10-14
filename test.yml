@@ -121,31 +121,7 @@ Resources:
   MyEcsTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      AssumeRolePolicyDocument:MyECSService1
-    Type: AWS::ECS::Service
-    DependsOn: MyLoadBalancer
-    Properties:
-      Cluster: !Ref MyECSCluster
-      TaskDefinition: !Ref MyServiceConnectNamespace
-      DesiredCount: 1
-      LoadBalancers:
-        - TargetGroupArn: !Ref MyTargetGroup
-          ContainerPort: 80
-          ContainerName: 'my-container-1'
-      ServiceConnectConfiguration:
-        Enabled: true
-        Services:
-          - PortName: http
-            DiscoveryName: nginx-ui
-            ClientAliases:
-              - Port: 80
-                DnsName: service1
-        LogConfiguration:
-          LogDriver: awslogs
-          Options:
-            awslogs-group: /ecs/service-connect
-            awslogs-region: !Ref AWS::Region
-            awslogs-stream-prefix: ecs
+      AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
@@ -162,34 +138,14 @@ Resources:
                   - ecr:GetAuthorizationToken
                   - ecr:BatchGetImage
                   - ecr:BatchCheckLayerAvailability
-                  - ecr:GetDownloadUrlForLayer
                   - logs:CreateLogStream
                   - logs:CreateLogGroup
                   - logs:PutLogEvents
                 Resource: "*"
-  MyECRAccessPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: ECRAccessPolicy
-      Roles:
-        - !Ref MyEcsTaskExecutionRole
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action:
-              - ecr:GetAuthorizationToken
-              - ecr:BatchCheckLayerAvailability
-              - ecr:GetDownloadUrlForLayer
-              - ecr:BatchGetImage
-            Resource: "*"
 
   # ECS Cluster
   MyECSCluster:
     Type: AWS::ECS::Cluster
-    Properties: 
-      ServiceConnectDefaults: 
-        Namespace: !GetAtt CloudMapNamespace.Arn
 
   # ECR Repositories
   MyECRRepo1:
@@ -214,23 +170,14 @@ Resources:
           Essential: true
           PortMappings:
             - ContainerPort: 80
-              HostPort: 80
-              Protocol: tcp
-              Name: my-container-1-port  # 名前を定義
 
   # ECS Service for Service 1 with Service Connect
   MyECSService1:
     Type: AWS::ECS::Service
     DependsOn: MyLoadBalancer
     Properties:
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: DISABLED
-          Subnets: [ !Ref 'MySubnet1' , !Ref 'MySubnet2' ]
-          SecurityGroups: [!Ref 'MySecurityGroup' ]
       Cluster: !Ref MyECSCluster
-      TaskDefinition: !Ref MyTaskDefinition1
-      LaunchType: FARGATE
+      TaskDefinition: !Ref MyServiceConnectNamespace
       DesiredCount: 1
       LoadBalancers:
         - TargetGroupArn: !Ref MyTargetGroup
@@ -238,9 +185,8 @@ Resources:
           ContainerName: 'my-container-1'
       ServiceConnectConfiguration:
         Enabled: true
-        Namespace: !GetAtt CloudMapNamespace.Arn
         Services:
-          - PortName: my-container-1-port
+          - PortName: http
             DiscoveryName: nginx-ui
             ClientAliases:
               - Port: 80
@@ -252,11 +198,6 @@ Resources:
             awslogs-region: !Ref AWS::Region
             awslogs-stream-prefix: ecs
 
-  CloudMapNamespace:
-    Type: AWS::ServiceDiscovery::HttpNamespace
-    Properties: 
-      Description: Namespace for the sample application.
-      Name: !Sub 'service.local'
 
     # Properties:
     #   Cluster: !Ref AppCluster
@@ -287,6 +228,12 @@ Resources:
     #         awslogs-region: !Ref AWS::Region
     #         awslogs-stream-prefix: "ui-serviceconnect"
 
+
+  CloudMapNamespace:
+      Type: AWS::ServiceDiscovery::HttpNamespace
+      Properties: 
+        Description: Namespace for the sample application.
+        Name: 'service.local'
 
 Outputs:
   LoadBalancerDNSName:
