@@ -201,6 +201,43 @@ Resources:
       LogGroupName: /ecs/my-app
       RetentionInDays: 7
 
+# CodePipeline
+  MyCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: arn:aws:iam::YOUR_ACCOUNT_ID:role/CodePipelineServiceRole
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: ECR
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                RepositoryName: !Ref MyECRRepository
+                ImageTag: latest
+        - Name: Deploy
+          Actions:
+            - Name: DeployAction
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: ECS
+              InputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                ClusterName: !Ref MyECSCluster
+                ServiceName: !Ref MyECSService
+                FileName: imagedefinitions.json
+      ArtifactStore:
+        Type: S3
+        Location: my-codepipeline-bucket
+
 Outputs:
   ApiUrl:
     Description: "API Gateway URL"
